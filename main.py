@@ -24,7 +24,7 @@ POSITION_RATIO = 0.05     # 종목당 잔고의 5%
 MAX_TOTAL_EXPOSURE = 0.60 # 전체 노출 한도 60%
 PARTIAL_TP_RATIO = 0.5    # 1차 익절 시 50% 정리
 TRAIL_ACTIVATION_RR = 2.0 # R:R 2배 도달 시 트레일링 활성화
-TRAIL_CALLBACK_ATR = 1.0  # 트레일링 콜백: ATR 1배
+TRAIL_CALLBACK_ATR = 1.5  # 트레일링 콜백: ATR 1.5배
 TRADE_LOG_FILE = "trade_log.json"
 POSITIONS_FILE = "positions.json"
 
@@ -283,11 +283,33 @@ def manage_existing_positions(exchange, managed_positions):
     """기존 포지션에 대해 트레일링 스탑 / 분할 익절 관리"""
     exchange_positions = get_exchange_positions(exchange)
     actions_taken = []
+    trade_log = load_json(TRADE_LOG_FILE, {"wins": 0, "losses": 0, "total_pnl": 0.0, "trades": []})
 
     for symbol, managed in list(managed_positions.items()):
         if symbol not in exchange_positions:
-            # 포지션이 청산됨 (손절 or 외부 청산)
-            actions_taken.append(f"  {symbol.split('/')[0]}: 포지션 청산 감지")
+            # 포지션이 청산됨 → 승패 기록
+            coin = symbol.split("/")[0]
+            # 청산 시 실현 손익 추정 (마지막 가격 기준)
+            try:
+                ticker = exchange.fetch_ticker(symbol)
+                last_price = ticker["last"]
+                qty = managed.get("quantity", 0)
+                if managed["side"] == "buy":
+                    pnl = (last_price - managed["entry_price"]) * qty
+                else:
+                    pnl = (managed["entry_price"] - last_price) * qty
+                pnl = round(pnl, 2)
+            except Exception:
+                pnl = 0.0
+
+            if pnl >= 0:
+                trade_log["wins"] += 1
+                actions_taken.append(f"  ✅ {coin}: 청산 +${pnl:.1f}")
+            else:
+                trade_log["losses"] += 1
+                actions_taken.append(f"  ❌ {coin}: 청산 ${pnl:.1f}")
+            trade_log["total_pnl"] = round(trade_log["total_pnl"] + pnl, 2)
+            save_json(TRADE_LOG_FILE, trade_log)
             del managed_positions[symbol]
             continue
 
@@ -464,86 +486,52 @@ def build_report(now_str, results, current_positions, trade_log, usdt_total, usd
     losses = trade_log["losses"]
     total_pnl = trade_log["total_pnl"]
     pnl_sign = "+" if total_pnl >= 0 else ""
-    ur_sign = "+" if total_unrealized >= 0 else ""
 
     lines = [
-        f"{'='*30}",
-        f"  \U0001f916 AI \ud2b8\ub808\uc774\ub529 \ubd07 \ub9ac\ud3ec\ud2b8",
-        f"  \U0001f4c5 {now_str}",
-        f"{'='*30}",
-        "",
-        f"\U0001f4b0 \uc794\uace0 \ud604\ud669",
-        f"  \u2022 \ucd1d \uc790\uc0b0: ${usdt_total:,.2f}",
-        f"  \u2022 \uac00\uc6a9 \ud604\uae08: ${usdt_free:,.2f}",
-        f"  \u2022 \ubbf8\uc2e4\ud604 \uc190\uc775: ${ur_sign}{total_unrealized:.2f}",
-        f"  \u2022 \ud3ec\uc9c0\uc158 \ub178\ucd9c: ${total_exposure:,.0f}",
-        "",
-        f"\U0001f4c8 \ub204\uc801 \uc131\uacfc: ${pnl_sign}{total_pnl:.2f} ({wins}\u2705 {losses}\u274c)",
+        f"📅 {now_str} 리포트",
+        f"━━━━━━━━━━━━━━━",
+        f"💰 총 자산: ${usdt_total:,.0f}",
+        f"💵 미실현: ${'+' if total_unrealized >= 0 else ''}{total_unrealized:.1f} | 노출: ${total_exposure:,.0f}",
+        f"📊 누적: ${pnl_sign}{total_pnl:.1f} ({wins}승 {losses}패)",
     ]
 
     # 포지션 관리 액션
     if pos_actions:
         lines.append("")
-        lines.append(f"\u2699\ufe0f \ud3ec\uc9c0\uc158 \uad00\ub9ac")
         lines.extend(pos_actions)
 
     # 보유 포지션
     lines.append("")
-    lines.append(f"\U0001f4cb \ubcf4\uc720 \ud3ec\uc9c0\uc158")
+    lines.append("📋 보유 포지션")
     if not current_positions:
-        lines.append("  \u2014 \uc5c6\uc74c")
+        lines.append("  없음")
     else:
         for sym, pos in current_positions.items():
             coin = sym.split("/")[0]
-            side_emoji = "\U0001f7e2" if pos["side"] == "long" else "\U0001f534"
-            side_kr = "\ub871" if pos["side"] == "long" else "\uc21f"
+            side_kr = "롱" if pos["side"] == "long" else "숏"
+            side_emoji = "🟢" if pos["side"] == "long" else "🔴"
             pnl = pos["unrealized_pnl"]
             pnl_pct = (pnl / pos["notional"] * 100) if pos["notional"] else 0
-
-            # 관리 포지션 정보
             mp = managed_positions.get(sym, {})
-            sl_price = mp.get("stop_loss", 0)
-            tp_price = mp.get("tp_target", 0)
-
-            lines.append(
-                f"  {side_emoji} {coin} {side_kr} {pos['amount']}\uac1c (${pos['notional']:,.0f})"
-            )
-            lines.append(
-                f"     \u251c \uc9c4\uc785 ${pos['entry_price']:,.2f}"
-            )
-            if sl_price:
-                lines.append(f"     \u251c \uc190\uc808 ${sl_price:,.2f}")
-            if tp_price:
-                lines.append(f"     \u251c 1\ucc28 \uc775\uc808 ${tp_price:,.2f}")
-            lines.append(
-                f"     \u2514 {'+' if pnl_pct >= 0 else ''}{pnl_pct:.1f}% (${'+' if pnl >= 0 else ''}{pnl:.1f})"
-            )
+            sl = mp.get("stop_loss", 0)
+            lines.append(f"{side_emoji} {coin} {side_kr} ${pos['notional']:,.0f}")
+            lines.append(f"  진입 ${pos['entry_price']:,.2f} → {'+' if pnl_pct >= 0 else ''}{pnl_pct:.1f}% (${'+' if pnl >= 0 else ''}{pnl:.1f})")
+            if sl:
+                lines.append(f"  손절 ${sl:,.2f}")
 
     # AI 판단
     lines.append("")
-    lines.append(f"\U0001f9e0 AI \ud310\ub2e8")
-    action_map = {
-        "BUY": ("\U0001f7e2", "\uac15\ub825\ub9e4\uc218"),
-        "SELL": ("\U0001f534", "\uac15\ub825\ub9e4\ub3c4"),
-        "HOLD": ("\u23f8\ufe0f", "\uad00\ub9dd"),
-    }
+    lines.append("🧠 AI 판단")
+    action_map = {"BUY": "🟢매수", "SELL": "🔴매도", "HOLD": "⏸관망"}
     for sym, res in results.items():
         coin = sym.split("/")[0]
         d = res["decision"]
-        emoji, action_kr = action_map.get(d["action"], ("\u2753", d["action"]))
+        action_kr = action_map.get(d["action"], d["action"])
         conf = d.get("confidence_score", 0)
         regime = res.get("regime", "")
-        tags = " ".join(d.get("reasoning_tags", []))
-        lines.append(f"  {emoji} {coin}: {action_kr} ({conf}%) [{regime}]")
-        if tags:
-            lines.append(f"     {tags}")
+        lines.append(f"  {coin}: {action_kr} ({conf}%) [{regime}]")
 
-    # 종목 선정
-    if scan_reasoning:
-        lines.append("")
-        lines.append(f"\U0001f50d \uc885\ubaa9 \uc120\uc815: {scan_reasoning}")
-
-    lines.append(f"\n{'='*30}")
+    lines.append("━━━━━━━━━━━━━━━")
     return "\n".join(lines)
 
 
@@ -602,9 +590,13 @@ def run_full_analysis():
     print("\n시장 스캔 중...")
     selected_symbols, scan_reasoning = scan_market(exchange)
 
+    # 보유 포지션 종목도 분석 대상에 포함 (중복 방지)
+    selected_set = set(selected_symbols)
     for sym in current_positions:
-        if sym not in selected_symbols:
-            selected_symbols.append(sym)
+        clean = sym.replace(":USDT", "")
+        if clean not in selected_set:
+            selected_symbols.append(clean)
+            selected_set.add(clean)
 
     # ── 3단계: 종목별 분석 & 주문 ──
     current_positions = get_exchange_positions(exchange)

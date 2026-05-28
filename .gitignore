@@ -1,5 +1,8 @@
 .env
 .claude/
+bot_state.json
+bot.log
+bot_error.log
 
 __pycache__/
 *.pyc
