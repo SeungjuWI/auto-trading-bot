@@ -4,3 +4,4 @@ ta
 openai
 python-dotenv
 requests
+schedule
