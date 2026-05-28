@@ -1,0 +1,35 @@
+{
+  "BTC/USDT": {
+    "side": "sell",
+    "quantity": 0.0102,
+    "leverage": 3,
+    "entry_price": 73135.1,
+    "stop_loss": 74241.9123,
+    "atr_4h": 737.8748667917085,
+    "tp_target": 70921.4754,
+    "partial_tp_done": false,
+    "sl_atr_mult": 1.5
+  },
+  "BCH/USDT": {
+    "side": "sell",
+    "quantity": 2.151,
+    "leverage": 3,
+    "entry_price": 331.16,
+    "stop_loss": 339.9651,
+    "atr_4h": 5.870061248517862,
+    "tp_target": 313.5498,
+    "partial_tp_done": false,
+    "sl_atr_mult": 1.5
+  },
+  "XRP/USDT": {
+    "side": "sell",
+    "quantity": 527.7,
+    "leverage": 3,
+    "entry_price": 1.2827,
+    "stop_loss": 1.3088,
+    "atr_4h": 0.017412067809206358,
+    "tp_target": 1.2305,
+    "partial_tp_done": false,
+    "sl_atr_mult": 1.5
+  }
+}

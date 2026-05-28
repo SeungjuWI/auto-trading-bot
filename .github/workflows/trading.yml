@@ -1,0 +1,52 @@
+name: Auto Trading Bot
+
+on:
+  schedule:
+    # 매 1시간: 포지션 관리 (트레일링/익절/스탑)
+    - cron: '17 1,2,3,5,6,7,9,10,11,13,14,15,17,18,19,21,22,23 * * *'
+    # 매 4시간: 전체 분석 + 신규 진입 + 리포트
+    - cron: '3 0,4,8,12,16,20 * * *'
+  workflow_dispatch:  # 수동 실행 버튼
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine run mode
+        id: mode
+        run: |
+          HOUR=$(date -u +%H)
+          if [[ "$HOUR" == "00" || "$HOUR" == "04" || "$HOUR" == "08" || "$HOUR" == "12" || "$HOUR" == "16" || "$HOUR" == "20" ]]; then
+            echo "mode=full" >> $GITHUB_OUTPUT
+          else
+            echo "mode=manage" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run trading bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_SECRET_KEY: ${{ secrets.BINANCE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python main.py ${{ steps.mode.outputs.mode }}
+
+      - name: Commit state files
+        run: |
+          git config user.name "trading-bot"
+          git config user.email "bot@auto-trading.local"
+          git add -f trade_log.json positions.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "bot: update trading state"
+          git push || true
