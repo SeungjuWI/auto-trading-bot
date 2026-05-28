@@ -540,25 +540,43 @@ def build_report(now_str, results, current_positions, trade_log, usdt_total, usd
 # ══════════════════════════════════════
 
 def run_manage_only():
-    """매 1시간: 포지션 관리만 (트레일링/분할익절/스탑 체크)"""
+    """매 1시간: 포지션 관리 + 상태 알림"""
     print("=== 포지션 관리 모드 ===")
     exchange = init_exchange()
     managed_positions = load_managed_positions()
+    now_str = datetime.now().strftime("%m/%d %H:%M")
 
-    if not managed_positions:
-        print("관리 중인 포지션 없음 → 스킵")
-        return
+    pos_actions = []
+    if managed_positions:
+        pos_actions = manage_existing_positions(exchange, managed_positions)
+        save_managed_positions(managed_positions)
 
-    pos_actions = manage_existing_positions(exchange, managed_positions)
-    save_managed_positions(managed_positions)
+    # 상태 요약 알림
+    balance = exchange.fetch_balance()
+    usdt_total = float(balance["USDT"]["total"])
+    positions = get_exchange_positions(exchange)
+    total_unrealized = sum(p["unrealized_pnl"] for p in positions.values())
+    trade_log = load_json(TRADE_LOG_FILE, {"wins": 0, "losses": 0, "total_pnl": 0.0})
+
+    lines = [f"⏰ {now_str} 정시 체크",
+             f"💰 ${usdt_total:,.0f} | 미실현 ${'+' if total_unrealized >= 0 else ''}{total_unrealized:.1f}",
+             f"📈 {trade_log['wins']}승 {trade_log['losses']}패 (${'+' if trade_log['total_pnl'] >= 0 else ''}{trade_log['total_pnl']:.1f})",
+             f"📋 포지션: {len(positions)}개"]
+
+    for sym, pos in positions.items():
+        coin = sym.split("/")[0]
+        side_kr = "롱" if pos["side"] == "long" else "숏"
+        pnl = pos["unrealized_pnl"]
+        pnl_pct = (pnl / pos["notional"] * 100) if pos["notional"] else 0
+        lines.append(f"  {'🟢' if pos['side'] == 'long' else '🔴'} {coin} {side_kr} ${pos['notional']:,.0f} ({'+' if pnl_pct >= 0 else ''}{pnl_pct:.1f}%)")
 
     if pos_actions:
-        now_str = datetime.now().strftime("%m/%d %H:%M")
-        msg = f"\u2699\ufe0f {now_str} \ud3ec\uc9c0\uc158 \uad00\ub9ac\n" + "\n".join(pos_actions)
-        print(msg)
-        send_telegram(msg)
-    else:
-        print("변동 없음")
+        lines.append("")
+        lines.extend(pos_actions)
+
+    msg = "\n".join(lines)
+    print(msg)
+    send_telegram(msg)
 
 
 def run_full_analysis():
