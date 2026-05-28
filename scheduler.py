@@ -146,11 +146,15 @@ def job_full():
         print(f"전체 분석 에러: {e}")
 
 
-# 매 1시간 포지션 관리
-schedule.every(1).hours.do(job_manage)
+# 매 정시 포지션 관리 (전체 분석 시간 제외)
+for h in ["01:00", "02:00", "03:00", "05:00", "06:00", "07:00",
+          "09:00", "10:00", "11:00", "13:00", "14:00", "15:00",
+          "17:00", "18:00", "19:00", "21:00", "22:00", "23:00"]:
+    schedule.every().day.at(h).do(job_manage)
 
-# 매 4시간 전체 분석
-schedule.every(4).hours.do(job_full)
+# 전체 분석 (0, 4, 8, 12, 16, 20시)
+for h in ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"]:
+    schedule.every().day.at(h).do(job_full)
 
 # 봇 상태 로드
 bot_active = load_state()
