@@ -75,7 +75,7 @@ def get_status():
         side_kr = "롱" if pos["side"] == "long" else "숏"
         pnl = pos["unrealized_pnl"]
         pnl_pct = (pnl / pos["notional"] * 100) if pos["notional"] else 0
-        lines.append(f"  {'🟢' if pos['side'] == 'long' else '🔴'} {coin} {side_kr} ${pos['notional']:,.0f} ({'+' if pnl_pct >= 0 else ''}{pnl_pct:.1f}%)")
+        lines.append(f"  {'🟢' if pos['side'] == 'long' else '🔴'} {coin} {side_kr} ${pos['notional']:,.0f} (${'+' if pnl >= 0 else ''}{pnl:.1f} / {'+' if pnl_pct >= 0 else ''}{pnl_pct:.1f}%)")
 
     return "\n".join(lines)
 
