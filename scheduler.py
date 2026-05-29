@@ -249,7 +249,7 @@ telegram_thread.start()
 print(f"=== 봇 스케줄러 시작 ({datetime.now()}) ===")
 print(f"상태: {'ON' if bot_active else 'OFF'}")
 print("스케줄: 매 1시간 포지션 관리 / 매 4시간 전체 분석")
-print("명령어: /on /off /status /help")
+print("명령어: /on /off /close /status /help")
 
 send_telegram(f"🤖 봇 스케줄러 시작\n상태: {'🟢 ON' if bot_active else '🔴 OFF'}\n/help 로 명령어 확인")
 
