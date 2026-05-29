@@ -33,14 +33,27 @@ def close_all_positions():
         return "보유 포지션 없음"
 
     closed = []
+    trade_log = load_json(TRADE_LOG_FILE, {"wins": 0, "losses": 0, "total_pnl": 0.0, "trades": []})
+
     for sym, pos in positions.items():
         try:
             close_side = "sell" if pos["side"] == "long" else "buy"
             exchange.create_market_order(sym, close_side, pos["amount"], params={"reduceOnly": True})
             coin = sym.split("/")[0]
-            closed.append(f"  {coin}: 청산 완료")
+            pnl = round(pos["unrealized_pnl"], 2)
+            pnl_pct = (pnl / pos["notional"] * 100) if pos["notional"] else 0
+
+            if pnl >= 0:
+                trade_log["wins"] += 1
+                closed.append(f"  ✅ {coin}: +${pnl:.1f} ({'+' if pnl_pct >= 0 else ''}{pnl_pct:.1f}%)")
+            else:
+                trade_log["losses"] += 1
+                closed.append(f"  ❌ {coin}: ${pnl:.1f} ({pnl_pct:.1f}%)")
+            trade_log["total_pnl"] = round(trade_log["total_pnl"] + pnl, 2)
         except Exception as e:
             closed.append(f"  {sym}: 청산 실패 ({e})")
+
+    save_json(TRADE_LOG_FILE, trade_log)
 
     # 열린 주문(스톱로스 등)도 취소
     try:
@@ -53,6 +66,58 @@ def close_all_positions():
     # positions.json 초기화
     save_json(POSITIONS_FILE, {})
     return "\n".join(closed)
+
+
+def close_position(coin):
+    """개별 포지션 청산"""
+    exchange = init_exchange()
+    positions = get_exchange_positions(exchange)
+    managed = load_json(POSITIONS_FILE, {})
+
+    # 코인명으로 심볼 찾기
+    target_sym = None
+    for sym in positions:
+        if sym.split("/")[0] == coin:
+            target_sym = sym
+            break
+
+    if not target_sym:
+        return f"❌ {coin} 포지션 없음"
+
+    pos = positions[target_sym]
+    try:
+        close_side = "sell" if pos["side"] == "long" else "buy"
+        exchange.create_market_order(target_sym, close_side, pos["amount"], params={"reduceOnly": True})
+
+        pnl = round(pos["unrealized_pnl"], 2)
+        pnl_pct = (pnl / pos["notional"] * 100) if pos["notional"] else 0
+
+        trade_log = load_json(TRADE_LOG_FILE, {"wins": 0, "losses": 0, "total_pnl": 0.0, "trades": []})
+        if pnl >= 0:
+            trade_log["wins"] += 1
+            emoji = "✅"
+        else:
+            trade_log["losses"] += 1
+            emoji = "❌"
+        trade_log["total_pnl"] = round(trade_log["total_pnl"] + pnl, 2)
+        save_json(TRADE_LOG_FILE, trade_log)
+
+        # 스톱로스 주문 취소
+        try:
+            open_orders = exchange.fetch_open_orders(target_sym)
+            for order in open_orders:
+                exchange.cancel_order(order["id"], target_sym)
+        except Exception:
+            pass
+
+        # positions.json에서 제거
+        if target_sym in managed:
+            del managed[target_sym]
+            save_json(POSITIONS_FILE, managed)
+
+        return f"{emoji} {coin} 청산: ${'+' if pnl >= 0 else ''}{pnl:.1f} ({'+' if pnl_pct >= 0 else ''}{pnl_pct:.1f}%)"
+    except Exception as e:
+        return f"❌ {coin} 청산 실패: {e}"
 
 
 def get_status():
@@ -117,8 +182,26 @@ def poll_telegram():
                 elif text == "/status":
                     send_telegram(get_status())
 
+                elif text.startswith("/close"):
+                    parts = text.split()
+                    if len(parts) < 2:
+                        exchange = init_exchange()
+                        pos = get_exchange_positions(exchange)
+                        if not pos:
+                            send_telegram("보유 포지션 없음")
+                        else:
+                            coins = [s.split("/")[0] for s in pos]
+                            send_telegram("청산할 종목을 선택하세요:\n" + "\n".join(f"  /close {c}" for c in coins) + "\n  /close all - 전체 청산")
+                    elif parts[1] == "all":
+                        result = close_all_positions()
+                        send_telegram(f"전체 청산:\n{result}")
+                    else:
+                        coin = parts[1].upper()
+                        result = close_position(coin)
+                        send_telegram(result)
+
                 elif text == "/help":
-                    send_telegram("📌 명령어\n/on - 봇 시작\n/off - 전체 청산 + 봇 정지\n/status - 현재 상태\n/help - 명령어 목록")
+                    send_telegram("📌 명령어\n/on - 봇 시작\n/off - 전체 청산 + 봇 정지\n/close BTC - 개별 청산\n/close all - 전체 청산\n/status - 현재 상태\n/help - 명령어 목록")
 
         except Exception as e:
             print(f"텔레그램 폴링 에러: {e}")
