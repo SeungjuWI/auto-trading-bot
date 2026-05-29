@@ -152,7 +152,13 @@ def poll_telegram():
     """텔레그램 명령어 폴링"""
     global bot_active
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-    last_update_id = 0
+    # 시작 시 기존 메시지 건너뛰기 (재시작 무한루프 방지)
+    try:
+        resp = requests.get(url, params={"timeout": 0}, timeout=5)
+        updates = resp.json().get("result", [])
+        last_update_id = updates[-1]["update_id"] if updates else 0
+    except Exception:
+        last_update_id = 0
 
     while True:
         try:
@@ -205,9 +211,8 @@ def poll_telegram():
 
                 elif text == "/restart":
                     send_telegram("🔄 봇 재시작 중...")
-                    # git pull로 최신 코드 반영
                     subprocess.run(["git", "pull"], cwd=os.path.dirname(os.path.abspath(__file__)))
-                    os.execv(sys.executable, [sys.executable] + sys.argv)
+                    os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)])
 
                 elif text == "/help":
                     send_telegram("📌 명령어\n/on - 봇 시작\n/off - 전체 청산 + 봇 정지\n/close BTC - 개별 청산\n/close all - 전체 청산\n/restart - 봇 재시작 (코드 반영)\n/status - 현재 상태\n/help - 명령어 목록")
