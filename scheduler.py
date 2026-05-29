@@ -1,9 +1,11 @@
+import os
 import sys
 import json
 import threading
 import schedule
 import time
 import requests
+import subprocess
 from datetime import datetime
 from main import (run_full_analysis, run_manage_only, init_exchange,
                   get_exchange_positions, send_telegram, load_json, save_json,
@@ -200,8 +202,14 @@ def poll_telegram():
                         result = close_position(coin)
                         send_telegram(result)
 
+                elif text == "/restart":
+                    send_telegram("🔄 봇 재시작 중...")
+                    # git pull로 최신 코드 반영
+                    subprocess.run(["git", "pull"], cwd=os.path.dirname(os.path.abspath(__file__)))
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+
                 elif text == "/help":
-                    send_telegram("📌 명령어\n/on - 봇 시작\n/off - 전체 청산 + 봇 정지\n/close BTC - 개별 청산\n/close all - 전체 청산\n/status - 현재 상태\n/help - 명령어 목록")
+                    send_telegram("📌 명령어\n/on - 봇 시작\n/off - 전체 청산 + 봇 정지\n/close BTC - 개별 청산\n/close all - 전체 청산\n/restart - 봇 재시작 (코드 반영)\n/status - 현재 상태\n/help - 명령어 목록")
 
         except Exception as e:
             print(f"텔레그램 폴링 에러: {e}")
@@ -249,7 +257,7 @@ telegram_thread.start()
 print(f"=== 봇 스케줄러 시작 ({datetime.now()}) ===")
 print(f"상태: {'ON' if bot_active else 'OFF'}")
 print("스케줄: 매 1시간 포지션 관리 / 매 4시간 전체 분석")
-print("명령어: /on /off /close /status /help")
+print("명령어: /on /off /close /restart /status /help")
 
 send_telegram(f"🤖 봇 스케줄러 시작\n상태: {'🟢 ON' if bot_active else '🔴 OFF'}\n/help 로 명령어 확인")
 
