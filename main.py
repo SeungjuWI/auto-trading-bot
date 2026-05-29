@@ -556,10 +556,11 @@ def run_manage_only():
     usdt_total = float(balance["USDT"]["total"])
     positions = get_exchange_positions(exchange)
     total_unrealized = sum(p["unrealized_pnl"] for p in positions.values())
+    wallet_balance = usdt_total - total_unrealized
     trade_log = load_json(TRADE_LOG_FILE, {"wins": 0, "losses": 0, "total_pnl": 0.0})
 
     lines = [f"⏰ {now_str} 정시 체크",
-             f"💰 ${usdt_total:,.0f} | 미실현 ${'+' if total_unrealized >= 0 else ''}{total_unrealized:.1f}",
+             f"💰 총 ${usdt_total:,.0f} (지갑 ${wallet_balance:,.0f} + 미실현 ${'+' if total_unrealized >= 0 else ''}{total_unrealized:.1f})",
              f"📈 {trade_log['wins']}승 {trade_log['losses']}패 (${'+' if trade_log['total_pnl'] >= 0 else ''}{trade_log['total_pnl']:.1f})",
              f"📋 포지션: {len(positions)}개"]
 
